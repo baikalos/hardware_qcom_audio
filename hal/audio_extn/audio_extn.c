@@ -446,6 +446,13 @@ bool audio_extn_should_use_handset_anc(int in_channels)
 {
     char prop_aanc[PROPERTY_VALUE_MAX] = "false";
 
+    bool force = property_get_bool("persist.ps.anc.enable", false);
+    if( force ) { 
+        aextnmod.anc_enabled = 1;
+    } else {
+        aextnmod.anc_enabled = 0;
+    }
+
     property_get("persist.vendor.audio.aanc.enable", prop_aanc, "0");
     if (!strncmp("true", prop_aanc, 4)) {
         ALOGD("%s: AANC enabled in the property", __func__);

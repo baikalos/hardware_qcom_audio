@@ -1981,6 +1981,58 @@ done:
     return ret;
 }
 
+void update_fluence_type(struct platform_data *my_data) {
+
+    char value[PROPERTY_VALUE_MAX];
+
+    bool use_fluence = property_get_bool("persist.ps.audio.use_fluence", false);
+
+    my_data->fluence_in_voice_call = false;
+    my_data->fluence_in_voice_rec = false;
+    my_data->fluence_in_audio_rec = false;
+    my_data->fluence_in_spkr_mode = false;
+    my_data->fluence_in_hfp_call = false;
+
+    if( use_fluence ) {
+        my_data->fluence_type = FLUENCE_DUAL_MIC;
+    } else {
+        my_data->fluence_type = FLUENCE_NONE;
+    }
+
+    if (my_data->fluence_type != FLUENCE_NONE) {
+        property_get("persist.vendor.audio.fluence.voicecall",value,"");
+        if (!strncmp("true", value, sizeof("true"))) {
+            my_data->fluence_in_voice_call = true;
+        }
+
+        property_get("persist.vendor.audio.fluence.voicerec",value,"");
+        if (!strncmp("true", value, sizeof("true"))) {
+            my_data->fluence_in_voice_rec = true;
+        }
+
+        property_get("persist.vendor.audio.fluence.audiorec",value,"");
+        if (!strncmp("true", value, sizeof("true"))) {
+            my_data->fluence_in_audio_rec = true;
+        }
+
+        property_get("persist.vendor.audio.fluence.speaker",value,"");
+        if (!strncmp("true", value, sizeof("true"))) {
+            my_data->fluence_in_spkr_mode = true;
+        }
+
+        property_get("persist.vendor.audio.fluence.mode",value,"");
+        if (!strncmp("broadside", value, sizeof("broadside"))) {
+            my_data->fluence_mode = FLUENCE_BROADSIDE;
+        }
+
+        property_get("persist.vendor.audio.fluence.hfpcall",value,"");
+        if (!strncmp("true", value, sizeof("true"))) {
+            my_data->fluence_in_hfp_call = true;
+        }
+    }
+}
+
+
 void *platform_init(struct audio_device *adev)
 {
     char platform[PROPERTY_VALUE_MAX];
@@ -1995,6 +2047,7 @@ void *platform_init(struct audio_device *adev)
     struct mixer_ctl *ctl = NULL;
     const char *id_string = NULL;
     int cfg_value = -1;
+    bool use_fluence = false;
 
     adev->snd_card = audio_extn_utils_open_snd_mixer(&adev->mixer);
     if (adev->snd_card < 0) {
@@ -2139,6 +2192,22 @@ void *platform_init(struct audio_device *adev)
 
         if (property_get_bool("persist.vendor.audio.fluence.tmic.enabled",false)) {
             my_data->fluence_type |= FLUENCE_TRI_MIC;
+        }
+    } else {
+        my_data->fluence_type = FLUENCE_NONE;
+    }
+
+    use_fluence = property_get_bool("persist.ps.audio.use_fluence", false);
+
+    my_data->fluence_in_voice_call = false;
+    my_data->fluence_in_voice_rec = false;
+    my_data->fluence_in_audio_rec = false;
+    my_data->fluence_in_spkr_mode = false;
+    my_data->fluence_in_hfp_call = false;
+
+    if( use_fluence ) {
+        if( my_data->fluence_type == FLUENCE_NONE ) {
+            my_data->fluence_type = FLUENCE_DUAL_MIC;
         }
     } else {
         my_data->fluence_type = FLUENCE_NONE;
@@ -4207,6 +4276,8 @@ snd_device_t platform_get_input_snd_device(void *platform, audio_devices_t out_d
 {
     struct platform_data *my_data = (struct platform_data *)platform;
     struct audio_device *adev = my_data->adev;
+    int whatsapp_fix = false;
+
     /*
      * TODO: active_input always points to last opened input. Source returned will
      * be wrong if more than one active inputs are present.
@@ -4225,8 +4296,13 @@ snd_device_t platform_get_input_snd_device(void *platform, audio_devices_t out_d
     int str_bitwidth = (adev->active_input == NULL) ?
                  CODEC_BACKEND_DEFAULT_BIT_WIDTH : adev->active_input->bit_width;
 
-    ALOGV("%s: enter: out_device(%#x) in_device(%#x) channel_count (%d) channel_mask (0x%x)",
+    ALOGE("%s: enter: out_device(%#x) in_device(%#x) channel_count (%d) channel_mask (0x%x)",
           __func__, out_device, in_device, channel_count, channel_mask);
+
+
+    update_fluence_type(my_data);
+
+
     if (my_data->external_mic) {
         if ((out_device != AUDIO_DEVICE_NONE) && ((mode == AUDIO_MODE_IN_CALL) || voice_is_in_call(adev) ||
             voice_extn_compress_voip_is_active(adev) || audio_extn_hfp_is_active(adev))) {
@@ -4297,20 +4373,39 @@ snd_device_t platform_get_input_snd_device(void *platform, audio_devices_t out_d
                     snd_device = SND_DEVICE_IN_AANC_HANDSET_MIC;
                 }
                 adev->acdb_settings |= ANC_FLAG;
-            } else if (my_data->fluence_type == FLUENCE_NONE ||
-                (my_data->fluence_in_voice_call == false &&
-                 my_data->fluence_in_hfp_call == false)) {
-                snd_device = SND_DEVICE_IN_HANDSET_MIC;
-                if (audio_extn_hfp_is_active(adev))
-                    platform_set_echo_reference(adev, true, out_device);
+            } else if (out_device & AUDIO_DEVICE_OUT_EARPIECE) {
+                if (my_data->fluence_type == FLUENCE_NONE ||
+                    (my_data->fluence_in_voice_call == false &&
+                    my_data->fluence_in_hfp_call == false)) {
+                    snd_device = SND_DEVICE_IN_HANDSET_MIC;
+                    if (audio_extn_hfp_is_active(adev))
+                        platform_set_echo_reference(adev, true, out_device);
+                } else {
+                    if ((my_data->fluence_type & FLUENCE_TRI_MIC) &&
+                        (my_data->source_mic_type & SOURCE_THREE_MIC)) {
+                        snd_device = SND_DEVICE_IN_HANDSET_TMIC;
+                        adev->acdb_settings |= TMIC_FLAG;
+                    } else { /* for FLUENCE_DUAL_MIC and SOURCE_DUAL_MIC */
+                        snd_device = SND_DEVICE_IN_HANDSET_DMIC;
+                        adev->acdb_settings |= DMIC_FLAG;
+                    }
+                }
             } else {
-                if ((my_data->fluence_type & FLUENCE_TRI_MIC) &&
-                    (my_data->source_mic_type & SOURCE_THREE_MIC)) {
-                    snd_device = SND_DEVICE_IN_HANDSET_TMIC;
-                    adev->acdb_settings |= TMIC_FLAG;
-                } else { /* for FLUENCE_DUAL_MIC and SOURCE_DUAL_MIC */
-                    snd_device = SND_DEVICE_IN_VOICE_DMIC;
-                    adev->acdb_settings |= DMIC_FLAG;
+                if (my_data->fluence_type == FLUENCE_NONE ||
+                    (my_data->fluence_in_voice_call == false &&
+                    my_data->fluence_in_hfp_call == false)) {
+                    snd_device = SND_DEVICE_IN_VOICE_SPEAKER_MIC;
+                    if (audio_extn_hfp_is_active(adev))
+                        platform_set_echo_reference(adev, true, out_device);
+                } else {
+                    if ((my_data->fluence_type & FLUENCE_TRI_MIC) &&
+                        (my_data->source_mic_type & SOURCE_THREE_MIC)) {
+                        snd_device = SND_DEVICE_IN_VOICE_SPEAKER_TMIC;
+                        adev->acdb_settings |= TMIC_FLAG;
+                    } else { /* for FLUENCE_DUAL_MIC and SOURCE_DUAL_MIC */
+                        snd_device = SND_DEVICE_IN_VOICE_DMIC;
+                        adev->acdb_settings |= DMIC_FLAG;
+                    }
                 }
             }
         } else if (out_device & AUDIO_DEVICE_OUT_WIRED_HEADSET) {
@@ -4508,6 +4603,13 @@ snd_device_t platform_get_input_snd_device(void *platform, audio_devices_t out_d
     if (adev->active_input && (audio_extn_ssr_get_stream() == adev->active_input))
         snd_device = SND_DEVICE_IN_THREE_MIC;
 
+    whatsapp_fix = property_get_bool("persist.vendor.audio.whatsapp",false);
+
+    if (whatsapp_fix && (in_device != AUDIO_DEVICE_NONE) && (in_device & AUDIO_DEVICE_IN_BUILTIN_MIC) && (out_device == AUDIO_DEVICE_NONE) ) {
+        snd_device = SND_DEVICE_IN_SPEAKER_MIC;
+    }
+
+
     if (snd_device != SND_DEVICE_NONE) {
         goto exit;
     }
@@ -4605,7 +4707,7 @@ snd_device_t platform_get_input_snd_device(void *platform, audio_devices_t out_d
         }
     }
 exit:
-    ALOGV("%s: exit: in_snd_device(%s)", __func__, device_table[snd_device]);
+    ALOGE("%s: exit: in_snd_device(%s)", __func__, device_table[snd_device]);
     return snd_device;
 }
 
