@@ -2361,9 +2361,9 @@ void *platform_init(struct audio_device *adev)
         }
 
         my_data->acdb_init = (acdb_init_t)dlsym(my_data->acdb_handle,
-                                                     "acdb_loader_init_v3");
+                                                     "acdb_loader_init_v2");
         if (my_data->acdb_init == NULL) {
-            ALOGE("%s: dlsym error %s for acdb_loader_init_v3", __func__, dlerror());
+            ALOGE("%s: dlsym error %s for acdb_loader_init_v2", __func__, dlerror());
             goto acdb_init_fail;
         }
 
@@ -2377,17 +2377,17 @@ void *platform_init(struct audio_device *adev)
                                                     "acdb_loader_reload_acdb_files");
         if (my_data->acdb_reload == NULL) {
             ALOGE("%s: dlsym error %s for acdb_loader_reload_acdb_files", __func__, dlerror());
-            goto acdb_init_fail;
+            //goto acdb_init_fail;
         }
 
         int result = acdb_init_v2(adev->mixer);
         if (!result) {
             my_data->is_acdb_initialized = true;
-            ALOGD("ACDB initialized");
+            ALOGE("ACDB initialized");
             audio_hwdep_send_cal(my_data);
         } else {
             my_data->is_acdb_initialized = false;
-            ALOGD("ACDB initialization failed");
+            ALOGE("ACDB initialization failed");
         }
     }
     /* init keep-alive for compress passthru */
