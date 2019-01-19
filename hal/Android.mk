@@ -92,8 +92,6 @@ ifeq ($(strip $(AUDIO_FEATURE_ENABLED_DLKM)),true)
   LOCAL_ADDITIONAL_DEPENDENCIES += $(BOARD_VENDOR_KERNEL_MODULES)
 endif
 
-LOCAL_CFLAGS += -DUSE_VENDOR_EXTN
-
 ifeq ($(strip $(AUDIO_FEATURE_ENABLED_HDMI_EDID)),true)
     LOCAL_CFLAGS += -DHDMI_EDID
     LOCAL_SRC_FILES += edid.c
@@ -324,7 +322,7 @@ LOCAL_SHARED_LIBRARIES := \
 	libcutils \
 	libhardware \
 	libtinyalsa \
-	libtinycompress_vendor \
+	libtinycompress \
 	libaudioroute \
 	libdl \
 	libaudioutils \
